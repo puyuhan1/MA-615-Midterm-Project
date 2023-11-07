@@ -1,0 +1,434 @@
+---
+title: "MA 615 Midterm Project"
+author: "Yuhan Pu"
+date: "2023-11-06"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+MA 615 Midterm Project
+
+Introduction:
+Based on these datasets from Fema, I could have a look on all disasters happened in USA, among them, storm is always the main reason for the cause of floods. In this case, I have download the datasets for Storm in USA of both 2020 and 2021 to figure out if there are any trend and law between the characatersitics of storm and the happens of flood.
+
+library packages:
+```{r}
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(lubridate)
+library(tidyr)
+```
+
+
+Import data:
+```{r}
+StormEventsDetails2020<-read.csv("StormEvents_details-ftp_v1.0_d2020_c20230927.csv")
+StormEventsDetails2021<-read.csv("StormEvents_details-ftp_v1.0_d2021_c20231017.csv")
+```
+
+First, since California and Massachusetts are two states that I have been living in. I want to focus on information of these two states.
+
+Select data by states:
+```{r}
+CA2020<-filter(StormEventsDetails2020,STATE=="CALIFORNIA")
+CA2021<-filter(StormEventsDetails2021,STATE=="CALIFORNIA")
+MA2020<-filter(StormEventsDetails2020,STATE=="MASSACHUSETTS")
+MA2021<-filter(StormEventsDetails2021,STATE=="MASSACHUSETTS")
+```
+
+Then select data by floods:
+```{r}
+CA2020flood<-filter(CA2020,EVENT_TYPE=="Flood" | EVENT_TYPE=="Flash Flood")
+CA2021flood<-filter(CA2021,EVENT_TYPE=="Flood" | EVENT_TYPE=="Flash Flood")
+MA2020flood<-filter(MA2020,EVENT_TYPE=="Flood" | EVENT_TYPE=="Flash Flood")
+MA2021flood<-filter(MA2021,EVENT_TYPE=="Flood" | EVENT_TYPE=="Flash Flood")
+```
+
+Let's focus on California 2020 first:
+First thing I want to figure out is the time of duration of each floods or flash floods.
+```{r}
+CA2020flood$DURATION<-(CA2020flood$END_TIME-CA2020flood$BEGIN_TIME)+(CA2020flood$END_DAY-CA2020flood$BEGIN_DAY)*2400
+```
+
+I want to know if there are any relationship between the moving distance of the storm and the duration. So I need to calculate a rate of moving distance by subtracting the latitude and longitude.
+```{r}
+CA2020flood$MOVING_DISTANCE<-sqrt((CA2020flood$END_LAT-CA2020flood$BEGIN_LAT)^2+(CA2020flood$END_LON-CA2020flood$BEGIN_LON)^2)
+```
+
+Then use ggplot to see if there any relationship between these two variables.
+```{r}
+ggplot(data = CA2020flood, aes(x = log10(DURATION), y = MOVING_DISTANCE)) +
+  geom_point() +
+  geom_smooth(method='lm',se=TRUE) +
+  labs(x = "log10(DURATION)", y = "MOVING_DISTANCE") +
+  theme_minimal()
+```
+Then I want to do same things to California 2021:
+```{r}
+CA2021flood$DURATION<-(CA2021flood$END_TIME-CA2021flood$BEGIN_TIME)+(CA2021flood$END_DAY-CA2021flood$BEGIN_DAY)*2400
+CA2021flood$MOVING_DISTANCE<-sqrt((CA2021flood$END_LAT-CA2021flood$BEGIN_LAT)^2+(CA2021flood$END_LON-CA2021flood$BEGIN_LON)^2)
+```
+
+```{r}
+ggplot(data = CA2021flood, aes(x = log10(DURATION), y = MOVING_DISTANCE)) +
+  geom_point() +
+  geom_smooth(method='lm',se=TRUE) +
+  labs(x = "log10(DURATION)", y = "MOVING_DISTANCE") +
+  theme_minimal()
+```
+From these two plots above, we can see that if we fit a line for both of them, the slope is a little bit flat so I want to check whether there are still relationship between these two variables in California.
+
+Fit two models here:
+```{r}
+model2020CA<-lm(CA2020flood$MOVING_DISTANCE~CA2020flood$DURATION)
+model2021CA<-lm(CA2021flood$MOVING_DISTANCE~CA2021flood$DURATION)
+```
+
+Then summary them to get the p-value:
+```{r}
+summary(model2020CA)
+```
+Since p-value is smaller than 0.05, we reject the null hypothesis and conclude that DURATION is significant in affecting the MOVING_DISTANCE for California in 2020.
+
+The same for California 2021:
+```{r}
+summary(model2021CA)
+```
+
+Since p-value is smaller than 0.05, we reject the null hypothesis and conclude that DURATION can have an affect on the MOVING_DISTANCE for California in 2020.
+
+Both models can conclude that, for California, the moving distance of storms here is related with the duration of them.
+
+After knowing this, I notice that the datas for only California and Massachussets seems to be so few that it's hard to find some law or frequence of data. In this case, I plan to go back to the overall datasets ("StormEventsDetails2020" and "StormEventsDetails2021") to search for some details.
+
+So I want to first know the top 20 states that floods are most likely to happen here.
+
+```{r}
+flood2020<-filter(StormEventsDetails2020,EVENT_TYPE=="Flood" | EVENT_TYPE=="Flash Flood")
+summary_data<-flood2020 %>%
+  group_by(STATE) %>%
+  summarize(counts=n()) %>%
+  arrange(desc(counts)) %>%
+  head(20)
+ggplot(summary_data, aes(x = reorder(STATE, counts), y = counts)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(
+    x = "State",
+    y = "Number of Floods",
+    title = "Top 20 States with the Largest Amounts of Floods"
+  ) +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 10))
+```
+
+Also I want to know the top 20 states with the largest amount of property damaged.
+```{r}
+flood2020$DAMAGE_PROPERTY <- gsub("K","",flood2020$DAMAGE_PROPERTY)
+flood2020$DAMAGE_CROPS <- gsub("K","",flood2020$DAMAGE_CROPS)
+```
+
+
+```{r}
+summary_data<-flood2020 %>%
+  group_by(STATE) %>%
+  summarize(TotalPropertyDamaged=sum(as.numeric(DAMAGE_PROPERTY))) %>%
+  arrange(desc(TotalPropertyDamaged),na.rm=TRUE) %>%
+  head(20)
+ggplot(summary_data, aes(x = reorder(STATE,TotalPropertyDamaged), y = TotalPropertyDamaged)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(
+    x = "State",
+    y = "Number of Damged Property",
+    title = "Top 20 States with the Largest Amounts of Property Damaged"
+  ) +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 10))
+```
+West Virgnia has the largest amount of property damaged in the flood.
+
+
+I want to create a new column to show the duration of each floods. Based on the findings in California that the duration of floods might have a relationship with the moving distance.
+```{r}
+flood2020$DURATION<-(flood2020$END_TIME-flood2020$BEGIN_TIME)+(flood2020$END_DAY-flood2020$BEGIN_DAY)*2400
+flood2020$MOVING_DISTANCE<-sqrt((flood2020$END_LAT-flood2020$BEGIN_LAT)^2+(flood2020$END_LON-flood2020$BEGIN_LON)^2)
+```
+
+I want to get the average duration of each states and the average moving distance of each states:
+```{r}
+summary_data<-flood2020 %>%
+  group_by(STATE) %>%
+  summarize(AverageDuration=mean(as.numeric(DURATION)),
+            AverageDistance=mean(as.numeric(MOVING_DISTANCE)))
+ggplot(summary_data, aes(x = log10(AverageDuration), y = AverageDistance, fill = STATE)) +
+  geom_point(shape = 21, size = 3, stroke = 1) +
+  labs(
+    x = "log10(AverageDuration)",
+    y = "AverageDistance",
+    title = "Scatter Plot with Color Fill by States")
+```
+
+I notice that the duration and distance can have a more obvious relationship through the picture above. So I want to fit a model.
+```{r}
+model2020<-lm(AverageDistance~log10(AverageDuration), data=summary_data)
+summary(model2020)
+```
+We see the p-value here is pretty smaller than 0.05 which indicates a strong relationship between Average Duration and Average Distance.
+
+After this, I want to know the frequency of flood at a certain period of time.
+```{r}
+flood2020hap<-flood2020%>%
+  mutate(
+    YEAR=floor(BEGIN_YEARMONTH/100),
+    MONTH=BEGIN_YEARMONTH%%100
+  )
+flood2020freq<-flood2020hap%>%
+  count(YEAR,MONTH)%>%
+  rename(FloodCount=n)
+```
+
+After get the frequency in each month, let's make a plot:
+```{r}
+flood2020freq$DATE<-make_date(flood2020freq$YEAR,flood2020freq$MONTH)
+ggplot(flood2020freq, aes(x = DATE, y = FloodCount)) +
+  geom_line(group = 1, colour = "blue") +
+  geom_point(colour = "red") +
+  labs(title = "USA Monthly Flood Event Frequency in 2020",
+       x = "Month",
+       y = "Number of Flood Events") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+We saw that the highest number of flood events happen at around May and August.
+
+As I just mentioned, California and Massachusetts are two states that I am most curious about. So I want to know the frequency of flood on these two states:
+For California:
+```{r}
+CAflood2020hap<-CA2020flood%>%
+  mutate(
+    YEAR=floor(BEGIN_YEARMONTH/100),
+    MONTH=BEGIN_YEARMONTH%%100
+  )
+CAflood2020freq<-CAflood2020hap%>%
+  count(YEAR,MONTH)%>%
+  rename(FloodCount=n)
+CAflood2020freq$DATE<-make_date(CAflood2020freq$YEAR,CAflood2020freq$MONTH)
+ggplot(CAflood2020freq, aes(x = DATE, y = FloodCount)) +
+  geom_line(group = 1, colour = "blue") +
+  geom_point(colour = "red") +
+  labs(title = "California Monthly Flood Event Frequency in 2020",
+       x = "Month",
+       y = "Number of Flood Events") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+Different from the overall trend in USA, California have the largest amount of flood around April and Janurary.
+
+Then for Massachusetts:
+```{r}
+MAflood2020hap<-MA2020flood%>%
+  mutate(
+    YEAR=floor(BEGIN_YEARMONTH/100),
+    MONTH=BEGIN_YEARMONTH%%100
+  )
+MAflood2020freq<-MAflood2020hap%>%
+  count(YEAR,MONTH)%>%
+  rename(FloodCount=n)
+MAflood2020freq$DATE<-make_date(MAflood2020freq$YEAR,MAflood2020freq$MONTH)
+ggplot(MAflood2020freq, aes(x = DATE, y = FloodCount)) +
+  geom_line(group = 1, colour = "blue") +
+  geom_point(colour = "red") +
+  labs(title = "Massachusetts Monthly Flood Event Frequency in 2020",
+       x = "Month",
+       y = "Number of Flood Events") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Similar to the overall trend, Massachusetts have the largest amount of floods around May.
+
+I want to know the occurance of floods at different latitude and longitude in USA, California and Massachusetts:
+
+The first is for the whole USA:
+```{r}
+ggplot(flood2020, aes(x=BEGIN_LON,y=BEGIN_LAT))+
+  geom_point(alpha=0.5,color='blue')+
+  labs(title='Flood Events in USA (2020)',
+       x='Longitude',
+       y='Latitude') +
+  theme_minimal()
+```
+We see that the occurance of floods is mostly often in around 40 latitude and -100 longitude.
+
+I want to see if it is the same for California and Massachusetts.
+
+I also collect the data from 2021, I want to plot them with 2020 to see if there are significant difference:
+For the whole USA:
+```{r}
+flood2021<-filter(StormEventsDetails2021,EVENT_TYPE=="Flood" | EVENT_TYPE=="Flash Flood")
+USAfloodcombined<-bind_rows(flood2020,flood2021)
+ggplot(USAfloodcombined, aes(x = BEGIN_LON, y = BEGIN_LAT, color = as.factor(YEAR))) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = c('blue', 'red')) +
+  labs(title = 'Flood Events in California (2020 vs. 2021)',
+       x = 'Longitude',
+       y = 'Latitude',
+       color = 'Year') +
+  theme_minimal()
+```
+
+
+For California:
+```{r}
+CAfloodcombined<-bind_rows(CA2020flood, CA2021flood)
+ggplot(CAfloodcombined, aes(x = BEGIN_LON, y = BEGIN_LAT, color = as.factor(YEAR))) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = c('blue', 'red')) +
+  labs(title = 'Flood Events in California (2020 vs. 2021)',
+       x = 'Longitude',
+       y = 'Latitude',
+       color = 'Year') +
+  theme_minimal()
+```
+
+For Massachusetts
+```{r}
+MAfloodcombined<-bind_rows(MA2020flood, MA2021flood)
+ggplot(MAfloodcombined, aes(x = BEGIN_LON, y = BEGIN_LAT, color = as.factor(YEAR))) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = c('blue', 'red')) +
+  labs(title = 'Flood Events in Massachusetts (2020 vs. 2021)',
+       x = 'Longitude',
+       y = 'Latitude',
+       color = 'Year') +
+  theme_minimal()
+```
+We found that for the whole USA, California and Massachusetts, there are no obvious difference in the position of occurance of floods in 2020 or 2021.
+
+
+Besides this, the damage and hazard of floods are also important, so I want to know the death and injuries brought by floods.
+```{r}
+total_deaths <- sum(flood2020$DEATHS_DIRECT, flood2020$DEATHS_INDIRECT, na.rm = TRUE)
+total_injuries <- sum(flood2020$INJURIES_DIRECT, flood2020$INJURIES_INDIRECT, na.rm = TRUE)
+```
+define a function to remove "K" ,"M", and "B" (I got help from Chatgpt on this part)
+```{r}
+convert_damage <- function(damage) {
+  if (is.na(damage)) {
+    return(0)
+  }
+  factor <- 1
+  if (grepl("K", damage)) {
+    factor <- 1e3
+    damage <- str_remove(damage, "K")
+  } else if (grepl("M", damage)) {
+    factor <- 1e6
+    damage <- str_remove(damage, "M")
+  } else if (grepl("B", damage)) {
+    factor <- 1e9
+    damage <- str_remove(damage, "B")
+  }
+  return(as.numeric(damage) * factor)
+}
+```
+
+Then we count the number of death, injuries, and damages:
+```{r}
+flood2020$DAMAGE_PROPERTY_NUM <- sapply(flood2020$DAMAGE_PROPERTY, convert_damage)
+flood2020$DAMAGE_CROPS_NUM <- sapply(flood2020$DAMAGE_CROPS, convert_damage)
+total_damage_property <- sum(flood2020$DAMAGE_PROPERTY_NUM, na.rm = TRUE)
+total_damage_crops <- sum(flood2020$DAMAGE_CROPS_NUM, na.rm = TRUE)
+```
+
+```{r}
+list(
+  Total_Deaths = total_deaths,
+  Total_Injuries = total_injuries,
+  Total_Property_Damage = total_damage_property,
+  Total_Crop_Damage = total_damage_crops
+)
+```
+I want to do the similar analysis to each states:
+```{r}
+severity_by_state<-flood2020%>%
+  group_by(STATE)%>%
+  summarise(
+    Total_Deaths=sum(DEATHS_DIRECT, DEATHS_INDIRECT,na.rm=TRUE),
+    Total_Injuries=sum(INJURIES_DIRECT, INJURIES_INDIRECT,na.rm=TRUE)
+  )
+
+damage_by_state<-flood2020%>%
+  group_by(STATE)%>%
+  summarise(
+    Total_Property_Damage=sum(DAMAGE_PROPERTY_NUM,na.rm=TRUE),
+    Total_Crop_Damage=sum(DAMAGE_CROPS_NUM,na.rm=TRUE)
+  )
+output<-left_join(severity_by_state,damage_by_state,by='STATE')
+output
+```
+I want to sort this based on four columns:
+```{r}
+outputsorted<-output%>%
+  arrange(desc(Total_Deaths))%>%
+  head(20)
+outputsorted$STATE
+```
+North Carolina has the largest total death.
+
+```{r}
+outputsorted<-output%>%
+  arrange(desc(Total_Injuries))%>%
+  head(20)
+outputsorted$STATE
+```
+Arizona has the largest total injuries.
+
+```{r}
+outputsorted<-output%>%
+  arrange(desc(Total_Property_Damage))%>%
+  head(20)
+outputsorted$STATE
+```
+Washington has the largest total property damage.
+
+```{r}
+outputsorted<-output%>%
+  arrange(desc(Total_Crop_Damage))%>%
+  head(20)
+outputsorted$STATE
+```
+Texas has the largest total crop damage.
+
+let's make a plot of them
+for total death and total injuries in each states:
+```{r}
+severity_by_state<-flood2020%>%
+  group_by(STATE)%>%
+  summarise(
+    Total_Deaths=sum(DEATHS_DIRECT,DEATHS_INDIRECT,na.rm=TRUE),
+    Total_Injuries=sum(INJURIES_DIRECT,INJURIES_INDIRECT,na.rm=TRUE)
+  )%>%
+  ungroup()
+severity_long<-severity_by_state%>%
+  pivot_longer(
+    cols=c("Total_Deaths", "Total_Injuries"),
+    names_to="Metric",
+    values_to="Count"
+  )
+ggplot(severity_long,aes(x=STATE,y=Count,fill=Metric))+
+  geom_bar(stat="identity",position="dodge")+
+  labs(x="State",y="Total Count",title="Total Deaths and Injuries by State") +
+  theme(axis.text.x=element_text(angle=90,hjust=1),
+        legend.title=element_blank())
+```
+
+
+Conclusion:
+This project I estimated the data of the occurance of floods in the whole USA and especially focus on the situation in California and Massachusetts. I noticed that the occurance of floods is mainly caused by storms and it happens with the same trend in each year. It brought some deaths and injuries and damages to crops and properties.
